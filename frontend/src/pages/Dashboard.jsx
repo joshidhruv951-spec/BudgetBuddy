@@ -1,588 +1,458 @@
-import React, { useState, useEffect } from "react";
-import api from "../api/axios";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
-import { Pie } from "react-chartjs-2";
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import api from '../api/axios';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+function Dashboard() {
+  const navigate = useNavigate();
+  const username = localStorage.getItem('username') || 'User';
 
-const Dashboard = () => {
   const [transactions, setTransactions] = useState([]);
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState("Food");
-  const [type, setType] = useState("EXPENSE");
-  
-  // Default limit 1,00,000
-  const [budgetLimit, setBudgetLimit] = useState(() => {
-    return Number(localStorage.getItem("budget_limit")) || 100000;
+  const [loading, setLoading] = useState(true);
+
+  // Form State
+  const [formData, setFormData] = useState({
+    title: '',
+    amount: '',
+    category: 'Food',
+    type: 'EXPENSE',
+    date: new Date().toISOString().split('T')[0],
   });
-  const [isEditingLimit, setIsEditingLimit] = useState(false);
-  const [tempLimit, setTempLimit] = useState(budgetLimit);
-
-  const [formError, setFormError] = useState("");
-  const [chartTab, setChartTab] = useState("EXPENSE");
-
-  // Edit State
   const [editingId, setEditingId] = useState(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editAmount, setEditAmount] = useState("");
-  const [editCategory, setEditCategory] = useState("Food");
-  const [editType, setEditType] = useState("EXPENSE");
+
+  // Dynamic Budget Limit
+  const [budgetLimit, setBudgetLimit] = useState(
+    Number(localStorage.getItem('budgetLimit')) || 10000
+  );
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [newBudget, setNewBudget] = useState(budgetLimit);
+
+  // 1. Fetch Transactions
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('transactions/');
+      setTransactions(res.data);
+    } catch (err) {
+      console.error('Failed to fetch transactions:', err);
+      if (err.response && err.response.status === 401) {
+        handleLogout();
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchTransactions();
   }, []);
 
-  const fetchTransactions = async () => {
-    try {
-      const res = await api.get("transactions/");
-      setTransactions(res.data || []);
-    } catch (err) {
-      console.error("Failed to fetch transactions", err);
-    }
+  // 2. Logout Handler
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refresh');
+    localStorage.removeItem('username');
+    navigate('/login');
   };
 
-  const handleSaveLimit = () => {
-    const parsed = parseFloat(tempLimit);
-    if (!isNaN(parsed) && parsed > 0) {
-      setBudgetLimit(parsed);
-      localStorage.setItem("budget_limit", parsed);
-      setIsEditingLimit(false);
-    }
+  // 3. Form Input Change
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleAdd = async (e) => {
+  // 4. Add or Update Transaction
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setFormError("");
-
-    const numAmount = Math.abs(parseFloat(amount));
-    if (isNaN(numAmount)) {
-      setFormError("Please enter a valid amount");
-      return;
-    }
-
-    const today = new Date().toISOString().split("T")[0];
+    if (!formData.title || !formData.amount) return;
 
     const payload = {
-      title: title,
-      amount: numAmount,
-      category: category,
-      transaction_type: type,
-      date: today,
+      title: formData.title,
+      amount: parseFloat(formData.amount),
+      category: formData.category,
+      type: formData.type,
+      transaction_type: formData.type,
+      date: formData.date,
     };
 
     try {
-      await api.post("transactions/", payload);
-      setTitle("");
-      setAmount("");
-      fetchTransactions();
-    } catch (err) {
-      console.error("Backend Error Details:", err.response?.data);
-      const errorMsg = err.response?.data
-        ? JSON.stringify(err.response.data)
-        : "Failed to connect to backend server.";
-      setFormError(`Add failed: ${errorMsg}`);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this transaction?")) {
-      try {
-        await api.delete(`transactions/${id}/`);
-        fetchTransactions();
-      } catch (err) {
-        console.error("Failed to delete transaction", err);
+      if (editingId) {
+        await api.put(`transactions/${editingId}/`, payload);
+      } else {
+        await api.post('transactions/', payload);
       }
-    }
-  };
 
-  const startEditing = (t) => {
-    setEditingId(t.id);
-    setEditTitle(t.title || "");
-    setEditAmount(t.amount !== undefined ? Math.abs(parseFloat(t.amount)) : "");
-    setEditCategory(t.category || "Food");
-    setEditType(
-      t.transaction_type
-        ? String(t.transaction_type).toUpperCase()
-        : parseFloat(t.amount) < 0
-        ? "EXPENSE"
-        : "INCOME"
-    );
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    const numAmount = Math.abs(parseFloat(editAmount));
-    const today = new Date().toISOString().split("T")[0];
-
-    try {
-      await api.put(`transactions/${editingId}/`, {
-        title: editTitle,
-        amount: numAmount,
-        category: editCategory,
-        transaction_type: editType,
-        date: today,
+      setFormData({
+        title: '',
+        amount: '',
+        category: 'Food',
+        type: 'EXPENSE',
+        date: new Date().toISOString().split('T')[0],
       });
       setEditingId(null);
       fetchTransactions();
     } catch (err) {
-      console.error("Failed to update transaction", err);
-      alert("Update failed: " + JSON.stringify(err.response?.data || "Error updating"));
+      console.error('Failed to save transaction:', err);
+      alert('Error saving transaction. Please try again.');
     }
   };
 
-  // Strict Type Checking
-  const isIncome = (t) => {
-    if (t.transaction_type) {
-      const typeStr = String(t.transaction_type).toUpperCase();
-      return typeStr === "INCOME" || typeStr === "INC";
-    }
-    return parseFloat(t.amount) > 0;
+  // 5. Edit Button Handler
+  const handleEdit = (item) => {
+    setEditingId(item.id);
+    const itemType = (item.type || item.transaction_type || 'EXPENSE').toUpperCase();
+    setFormData({
+      title: item.title,
+      amount: item.amount,
+      category: item.category || 'Food',
+      type: itemType,
+      date: item.date || new Date().toISOString().split('T')[0],
+    });
   };
 
-  const isExpense = (t) => {
-    if (t.transaction_type) {
-      const typeStr = String(t.transaction_type).toUpperCase();
-      return typeStr === "EXPENSE" || typeStr === "EXP";
+  // 6. Delete Transaction
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this transaction?')) return;
+    try {
+      await api.delete(`transactions/${id}/`);
+      fetchTransactions();
+    } catch (err) {
+      console.error('Failed to delete:', err);
     }
-    return parseFloat(t.amount) < 0;
   };
 
-  // Totals Calculations
+  // 7. Save Budget Limit
+  const handleSaveBudget = () => {
+    const val = Number(newBudget);
+    if (val > 0) {
+      setBudgetLimit(val);
+      localStorage.setItem('budgetLimit', val);
+      setIsEditingBudget(false);
+    }
+  };
+
+  // Calculations
   const totalIncome = transactions
-    .filter(isIncome)
-    .reduce((acc, t) => acc + Math.abs(parseFloat(t.amount || 0)), 0);
+    .filter((t) => (t.type || t.transaction_type || '').toUpperCase() === 'INCOME')
+    .reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
 
   const totalExpense = transactions
-    .filter(isExpense)
-    .reduce((acc, t) => acc + Math.abs(parseFloat(t.amount || 0)), 0);
+    .filter((t) => (t.type || t.transaction_type || '').toUpperCase() === 'EXPENSE')
+    .reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
 
-  const netBalance = totalIncome - totalExpense;
-  const budgetUsedPercent = budgetLimit > 0 ? Math.min((totalExpense / budgetLimit) * 100, 100) : 0;
-
-  // 1. Expense Breakdown Data
-  const expenses = transactions.filter(isExpense);
-  const expenseCategoryTotals = expenses.reduce((acc, t) => {
-    const cat = t.category || "Other";
-    acc[cat] = (acc[cat] || 0) + Math.abs(parseFloat(t.amount || 0));
-    return acc;
-  }, {});
-
-  const expensePieData = {
-    labels: Object.keys(expenseCategoryTotals),
-    datasets: [
-      {
-        label: "Expenses (₹)",
-        data: Object.values(expenseCategoryTotals),
-        backgroundColor: ["#EF4444", "#F97316", "#F59E0B", "#EC4899", "#8B5CF6", "#6B7280"],
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  // 2. Income Breakdown Data
-  const incomes = transactions.filter(isIncome);
-  const incomeCategoryTotals = incomes.reduce((acc, t) => {
-    const cat = t.category || "Salary";
-    acc[cat] = (acc[cat] || 0) + Math.abs(parseFloat(t.amount || 0));
-    return acc;
-  }, {});
-
-  const incomePieData = {
-    labels: Object.keys(incomeCategoryTotals),
-    datasets: [
-      {
-        label: "Income (₹)",
-        data: Object.values(incomeCategoryTotals),
-        backgroundColor: ["#10B981", "#3B82F6", "#06B6D4", "#6366F1", "#14B8A6", "#84CC16"],
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  // 3. Overview Data
-  const overviewPieData = {
-    labels: ["Total Income", "Total Expense"],
-    datasets: [
-      {
-        label: "Amount (₹)",
-        data: [totalIncome, totalExpense],
-        backgroundColor: ["#10B981", "#EF4444"],
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  const inputStyle = {
-    padding: "10px",
-    color: "#111827",
-    backgroundColor: "#ffffff",
-    border: "1px solid #d1d5db",
-    borderRadius: "6px",
-    fontSize: "14px",
-    outline: "none",
-  };
+  const totalBalance = totalIncome - totalExpense;
+  const budgetSpentPercent = Math.min(Math.round((totalExpense / budgetLimit) * 100), 100);
 
   return (
-    <div style={{ maxWidth: "800px", margin: "20px auto", padding: "20px", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
-      <h2 style={{ color: "#1f2937", marginBottom: "20px" }}>BudgetBuddy Dashboard</h2>
-
-      {/* Stats Cards */}
-      <div style={{ display: "flex", gap: "15px", marginBottom: "20px" }}>
-        <div style={{ flex: 1, padding: "16px", background: "#e8f5e9", borderRadius: "8px", border: "1px solid #c8e6c9" }}>
-          <h4 style={{ margin: "0 0 8px 0", color: "#2e7d32" }}>Total Income</h4>
-          <p style={{ fontSize: "24px", color: "#1b5e20", fontWeight: "bold", margin: 0 }}>₹{totalIncome.toLocaleString('en-IN')}</p>
-        </div>
-        <div style={{ flex: 1, padding: "16px", background: "#ffebee", borderRadius: "8px", border: "1px solid #ffcdd2" }}>
-          <h4 style={{ margin: "0 0 8px 0", color: "#c62828" }}>Total Expense</h4>
-          <p style={{ fontSize: "24px", color: "#b71c1c", fontWeight: "bold", margin: 0 }}>₹{totalExpense.toLocaleString('en-IN')}</p>
-        </div>
-        <div style={{ flex: 1, padding: "16px", background: "#e3f2fd", borderRadius: "8px", border: "1px solid #bbdefb" }}>
-          <h4 style={{ margin: "0 0 8px 0", color: "#1565c0" }}>Net Balance</h4>
-          <p style={{ fontSize: "24px", color: "#0d47a1", fontWeight: "bold", margin: 0 }}>₹{netBalance.toLocaleString('en-IN')}</p>
-        </div>
-      </div>
-
-      {/* Budget Limit Progress Bar */}
-      <div style={{ marginBottom: "25px", background: "#f8f9fa", padding: "16px", borderRadius: "8px", border: "1px solid #e9ecef" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", fontWeight: "500", color: "#495057" }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f1f5f9', padding: '24px', fontFamily: 'sans-serif' }}>
+      <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+        
+        {/* HEADER WITH LOGOUT */}
+        <header style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          backgroundColor: '#0f172a',
+          color: '#ffffff',
+          padding: '16px 24px',
+          borderRadius: '12px',
+          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+          marginBottom: '24px'
+        }}>
           <div>
-            <span>Monthly Expense Limit: </span>
-            {isEditingLimit ? (
-              <span style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
+            <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 'bold', letterSpacing: '-0.5px' }}>BudgetBuddy</h1>
+            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+              Welcome back, <strong style={{ color: '#38bdf8' }}>{username}</strong>
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            style={{
+              backgroundColor: '#ef4444',
+              color: '#ffffff',
+              border: 'none',
+              padding: '9px 18px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '14px',
+              boxShadow: '0 2px 4px rgba(239,68,68,0.3)',
+              transition: 'background 0.2s'
+            }}
+          >
+            Logout
+          </button>
+        </header>
+
+        {/* SUMMARY METRIC CARDS */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '5px solid #2563eb' }}>
+            <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Net Balance</span>
+            <div style={{ fontSize: '24px', fontWeight: 'bold', color: totalBalance >= 0 ? '#0f172a' : '#ef4444', marginTop: '6px' }}>
+              ₹{totalBalance.toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '5px solid #10b981' }}>
+            <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Total Income</span>
+            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981', marginTop: '6px' }}>
+              + ₹{totalIncome.toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '5px solid #ef4444' }}>
+            <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Total Expenses</span>
+            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444', marginTop: '6px' }}>
+              - ₹{totalExpense.toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '5px solid #f59e0b' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Monthly Budget</span>
+              <button
+                onClick={() => setIsEditingBudget(!isEditingBudget)}
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}
+              >
+                {isEditingBudget ? 'Cancel' : 'Edit'}
+              </button>
+            </div>
+
+            {isEditingBudget ? (
+              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                 <input
                   type="number"
-                  value={tempLimit}
-                  onChange={(e) => setTempLimit(e.target.value)}
-                  style={{ width: "110px", padding: "4px 8px", borderRadius: "4px", border: "1px solid #0284c7" }}
+                  value={newBudget}
+                  onChange={(e) => setNewBudget(e.target.value)}
+                  style={{ width: '100px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a' }}
                 />
                 <button
-                  onClick={handleSaveLimit}
-                  style={{ background: "#16a34a", color: "#fff", border: "none", padding: "4px 8px", borderRadius: "4px", cursor: "pointer", fontSize: "12px" }}
+                  onClick={handleSaveBudget}
+                  style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}
                 >
                   Save
                 </button>
-                <button
-                  onClick={() => setIsEditingLimit(false)}
-                  style={{ background: "#6b7280", color: "#fff", border: "none", padding: "4px 8px", borderRadius: "4px", cursor: "pointer", fontSize: "12px" }}
-                >
-                  Cancel
-                </button>
-              </span>
+              </div>
             ) : (
-              <span>
-                <strong>₹{budgetLimit.toLocaleString('en-IN')}</strong>{" "}
-                <button
-                  onClick={() => {
-                    setTempLimit(budgetLimit);
-                    setIsEditingLimit(true);
-                  }}
-                  style={{ background: "none", border: "none", color: "#0284c7", cursor: "pointer", textDecoration: "underline", fontSize: "13px", marginLeft: "6px" }}
-                >
-                  Edit Limit
-                </button>
-              </span>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0f172a', marginTop: '6px' }}>
+                ₹{budgetLimit.toLocaleString()}
+              </div>
             )}
           </div>
-          <span>{budgetUsedPercent.toFixed(1)}% Used</span>
         </div>
-        <div style={{ width: "100%", height: "12px", background: "#dee2e6", borderRadius: "6px", overflow: "hidden" }}>
-          <div
-            style={{
-              width: `${budgetUsedPercent}%`,
-              height: "100%",
-              background: budgetUsedPercent > 85 ? "#d32f2f" : "#2e7d32",
-              transition: "width 0.3s ease",
-            }}
-          />
-        </div>
-      </div>
 
-      {/* Error Message */}
-      {formError && (
-        <div style={{ color: "#d32f2f", background: "#ffebee", padding: "12px", borderRadius: "6px", marginBottom: "20px", border: "1px solid #ffcdd2" }}>
-          {formError}
-        </div>
-      )}
-
-      {/* Add Transaction Form */}
-      <form onSubmit={handleAdd} style={{ display: "flex", gap: "10px", marginBottom: "25px", flexWrap: "wrap" }}>
-        <input
-          type="text"
-          placeholder="Title (e.g. Salary, Grocery)"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          style={{ ...inputStyle, flex: 2 }}
-        />
-        <input
-          type="number"
-          placeholder="Amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          required
-          style={{ ...inputStyle, flex: 1 }}
-        />
-        <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle }}>
-          <option value="Food">Food</option>
-          <option value="Rent">Rent</option>
-          <option value="Travel">Travel</option>
-          <option value="Salary">Salary</option>
-          <option value="Freelance">Freelance</option>
-          <option value="Investment">Investment</option>
-          <option value="Entertainment">Entertainment</option>
-          <option value="Other">Other</option>
-        </select>
-        <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...inputStyle }}>
-          <option value="EXPENSE">Expense (-)</option>
-          <option value="INCOME">Income (+)</option>
-        </select>
-        <button
-          type="submit"
-          style={{
-            padding: "10px 20px",
-            background: "#1976d2",
-            color: "#fff",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          Add
-        </button>
-      </form>
-
-      {/* Visual Charts Section with Smart Tabs */}
-      {(totalIncome > 0 || totalExpense > 0) && (
-        <div style={{ marginBottom: "30px", padding: "20px", background: "#f8f9fa", borderRadius: "8px", border: "1px solid #e9ecef", textAlign: "center" }}>
-          <div style={{ display: "flex", justifyContent: "center", gap: "10px", marginBottom: "20px" }}>
-            <button
-              onClick={() => setChartTab("EXPENSE")}
-              style={{
-                padding: "8px 16px",
-                borderRadius: "20px",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: "bold",
-                background: chartTab === "EXPENSE" ? "#ef4444" : "#e5e7eb",
-                color: chartTab === "EXPENSE" ? "#fff" : "#374151",
-              }}
-            >
-              🔴 Expenses
-            </button>
-            <button
-              onClick={() => setChartTab("INCOME")}
-              style={{
-                padding: "8px 16px",
-                borderRadius: "20px",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: "bold",
-                background: chartTab === "INCOME" ? "#10b981" : "#e5e7eb",
-                color: chartTab === "INCOME" ? "#fff" : "#374151",
-              }}
-            >
-              🟢 Income
-            </button>
-            <button
-              onClick={() => setChartTab("OVERVIEW")}
-              style={{
-                padding: "8px 16px",
-                borderRadius: "20px",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: "bold",
-                background: chartTab === "OVERVIEW" ? "#3b82f6" : "#e5e7eb",
-                color: chartTab === "OVERVIEW" ? "#fff" : "#374151",
-              }}
-            >
-              ⚖️ Income vs Expense
-            </button>
+        {/* BUDGET PROGRESS BAR */}
+        <div style={{ backgroundColor: '#ffffff', padding: '18px 24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#334155' }}>
+            <span>Monthly Budget Usage: {budgetSpentPercent}% used</span>
+            <span>₹{totalExpense.toLocaleString()} / ₹{budgetLimit.toLocaleString()}</span>
           </div>
+          <div style={{ width: '100%', height: '10px', backgroundColor: '#e2e8f0', borderRadius: '5px', overflow: 'hidden' }}>
+            <div style={{
+              width: `${budgetSpentPercent}%`,
+              height: '100%',
+              backgroundColor: budgetSpentPercent > 90 ? '#ef4444' : budgetSpentPercent > 70 ? '#f59e0b' : '#10b981',
+              borderRadius: '5px',
+              transition: 'width 0.4s ease'
+            }} />
+          </div>
+        </div>
 
-          <div style={{ maxWidth: "300px", margin: "0 auto" }}>
-            {chartTab === "EXPENSE" && (
-              Object.keys(expenseCategoryTotals).length > 0 ? (
-                <div>
-                  <h4 style={{ margin: "0 0 12px 0", color: "#374151" }}>Expense Breakdown by Category</h4>
-                  <Pie data={expensePieData} />
-                </div>
-              ) : (
-                <p style={{ color: "#6b7280" }}>No expense records found yet.</p>
-              )
-            )}
+        {/* MAIN 2-COLUMN SECTION: FORM & TRANSACTIONS */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
+          
+          {/* TRANSACTION FORM */}
+          <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>
+              {editingId ? '✏️ Edit Transaction' : '➕ Add Transaction'}
+            </h3>
 
-            {chartTab === "INCOME" && (
-              Object.keys(incomeCategoryTotals).length > 0 ? (
-                <div>
-                  <h4 style={{ margin: "0 0 12px 0", color: "#374151" }}>Income Breakdown by Category</h4>
-                  <Pie data={incomePieData} />
-                </div>
-              ) : (
-                <p style={{ color: "#6b7280" }}>No income records found yet.</p>
-              )
-            )}
-
-            {chartTab === "OVERVIEW" && (
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <h4 style={{ margin: "0 0 12px 0", color: "#374151" }}>Total Income vs Total Expense</h4>
-                <Pie data={overviewPieData} />
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Title</label>
+                <input
+                  type="text"
+                  name="title"
+                  required
+                  placeholder="e.g., Grocery Shopping"
+                  value={formData.title}
+                  onChange={handleChange}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Amount (₹)</label>
+                <input
+                  type="number"
+                  name="amount"
+                  required
+                  placeholder="e.g., 500"
+                  value={formData.amount}
+                  onChange={handleChange}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Type</label>
+                  <select
+                    name="type"
+                    value={formData.type}
+                    onChange={handleChange}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                  >
+                    <option value="EXPENSE">Expense</option>
+                    <option value="INCOME">Income</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Category</label>
+                  <select
+                    name="category"
+                    value={formData.category}
+                    onChange={handleChange}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                  >
+                    <option value="Food">Food</option>
+                    <option value="Rent">Rent</option>
+                    <option value="Salary">Salary</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Shopping">Shopping</option>
+                    <option value="Utilities">Utilities</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Date</label>
+                <input
+                  type="date"
+                  name="date"
+                  value={formData.date}
+                  onChange={handleChange}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    backgroundColor: editingId ? '#f59e0b' : '#2563eb',
+                    color: '#ffffff',
+                    padding: '12px',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  {editingId ? 'Update Transaction' : 'Add Transaction'}
+                </button>
+
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingId(null);
+                      setFormData({
+                        title: '',
+                        amount: '',
+                        category: 'Food',
+                        type: 'EXPENSE',
+                        date: new Date().toISOString().split('T')[0],
+                      });
+                    }}
+                    style={{ backgroundColor: '#94a3b8', color: '#ffffff', padding: '12px 18px', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* RECENT TRANSACTIONS LIST */}
+          <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>📜 Recent Transactions</h3>
+
+            {loading ? (
+              <p style={{ color: '#64748b', textAlign: 'center', margin: '40px 0' }}>Loading transactions...</p>
+            ) : transactions.length === 0 ? (
+              <p style={{ color: '#94a3b8', textAlign: 'center', margin: '40px 0' }}>No transactions recorded yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto' }}>
+                {transactions.map((t) => {
+                  const isIncome = (t.type || t.transaction_type || '').toUpperCase() === 'INCOME';
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '8px',
+                        border: '1px solid #f1f5f9'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '600', color: '#1e293b', fontSize: '15px' }}>{t.title}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            backgroundColor: '#e2e8f0',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            marginRight: '8px',
+                            fontWeight: '500'
+                          }}>
+                            {t.category || 'General'}
+                          </span>
+                          {t.date}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{
+                          fontWeight: 'bold',
+                          fontSize: '16px',
+                          color: isIncome ? '#10b981' : '#ef4444'
+                        }}>
+                          {isIncome ? '+' : '-'}₹{parseFloat(t.amount).toLocaleString()}
+                        </span>
+                        <button
+                          onClick={() => handleEdit(t)}
+                          title="Edit"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px' }}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDelete(t.id)}
+                          title="Delete"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px' }}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
-      )}
 
-      {/* Transactions List */}
-      <h3 style={{ color: "#374151", marginBottom: "15px" }}>Transactions</h3>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {transactions.map((t) => (
-          <li
-            key={t.id}
-            style={{
-              padding: "14px 16px",
-              marginBottom: "10px",
-              border: "1px solid #e5e7eb",
-              borderRadius: "8px",
-              background: "#ffffff",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            }}
-          >
-            {editingId === t.id ? (
-              <div style={{ background: "#f9fafb", padding: "15px", borderRadius: "6px", border: "1px solid #93c5fd" }}>
-                <h4 style={{ margin: "0 0 12px 0", color: "#1e40af" }}>✏️ Edit Transaction</h4>
-                <form onSubmit={handleUpdate} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                    <input
-                      type="text"
-                      placeholder="Title"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      required
-                      autoFocus
-                      style={{ ...inputStyle, flex: 2 }}
-                    />
-                    <input
-                      type="number"
-                      placeholder="Amount"
-                      value={editAmount}
-                      onChange={(e) => setEditAmount(e.target.value)}
-                      required
-                      style={{ ...inputStyle, flex: 1 }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                    <select
-                      value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value)}
-                      style={{ ...inputStyle, flex: 1 }}
-                    >
-                      <option value="Food">Food</option>
-                      <option value="Rent">Rent</option>
-                      <option value="Travel">Travel</option>
-                      <option value="Salary">Salary</option>
-                      <option value="Freelance">Freelance</option>
-                      <option value="Investment">Investment</option>
-                      <option value="Entertainment">Entertainment</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    <select
-                      value={editType}
-                      onChange={(e) => setEditType(e.target.value)}
-                      style={{ ...inputStyle, flex: 1 }}
-                    >
-                      <option value="EXPENSE">Expense (-)</option>
-                      <option value="INCOME">Income (+)</option>
-                    </select>
-                    <button
-                      type="submit"
-                      style={{
-                        padding: "10px 18px",
-                        background: "#16a34a",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingId(null)}
-                      style={{
-                        padding: "10px 18px",
-                        background: "#6b7280",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        fontWeight: "500",
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            ) : (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <strong style={{ fontSize: "16px", color: "#111827" }}>{t.title}</strong>{" "}
-                  <small style={{ color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: "12px" }}>
-                    {t.category || "General"}
-                  </small>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <span
-                    style={{
-                      fontWeight: "bold",
-                      fontSize: "15px",
-                      color: isIncome(t) ? "#16a34a" : "#dc2626",
-                    }}
-                  >
-                    {isIncome(t) ? `+₹${Math.abs(t.amount).toLocaleString('en-IN')}` : `-₹${Math.abs(t.amount).toLocaleString('en-IN')}`}
-                  </span>
-                  <button
-                    onClick={() => startEditing(t)}
-                    style={{
-                      background: "#f59e0b",
-                      color: "#fff",
-                      border: "none",
-                      padding: "6px 12px",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      fontWeight: "500",
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(t.id)}
-                    style={{
-                      background: "#ef4444",
-                      color: "#fff",
-                      border: "none",
-                      padding: "6px 12px",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      fontWeight: "500",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+      </div>
     </div>
   );
-};
+}
 
 export default Dashboard;
