@@ -76,12 +76,12 @@ class BudgetSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
     def validate_month(self, value):
-        if not (1 <= value <= 12):
+        if not (1 <= int(value) <= 12):
             raise serializers.ValidationError("Month must be between 1 and 12.")
         return value
 
     def validate_total_amount(self, value):
-        if value <= 0:
+        if float(value) <= 0:
             raise serializers.ValidationError("Total budget must be greater than 0.")
         return value
 
@@ -98,6 +98,10 @@ class BudgetSerializer(serializers.ModelSerializer):
         
         budget.category_allocations.all().delete()
         for alloc in allocations_data:
-            CategoryBudget.objects.create(budget=budget, **alloc)
+            CategoryBudget.objects.create(
+                budget=budget,
+                category=alloc['category'],
+                allocated_amount=alloc['allocated_amount']
+            )
 
         return budget

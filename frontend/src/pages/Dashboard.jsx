@@ -62,6 +62,12 @@ function Dashboard() {
   const currentMonth = currentDate.getMonth() + 1;
   const currentYear = currentDate.getFullYear();
 
+  const handleAuthError = () => {
+    alert('Aapka Login Session expire ho gaya hai. Kripya dobara login karein!');
+    localStorage.clear();
+    navigate('/login');
+  };
+
   // 1. Fetch All Data
   const loadDashboardData = async () => {
     try {
@@ -96,7 +102,7 @@ function Dashboard() {
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
       if (err.response && err.response.status === 401) {
-        handleLogout();
+        handleAuthError();
       }
     } finally {
       setLoading(false);
@@ -112,11 +118,11 @@ function Dashboard() {
     navigate('/login');
   };
 
-  // 2. Submit Transaction (Handles both source & income_type)
+  // 2. Submit Transaction
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.amount || Number(formData.amount) <= 0) {
-      alert('Please enter an amount greater than 0');
+      alert('Amount 0 se bada hona chahiye.');
       return;
     }
 
@@ -135,7 +141,6 @@ function Dashboard() {
           await api.post('expenses/', payload);
         }
       } else {
-        // Sends both source AND income_type to pass backend validation cleanly
         const payload = {
           source: formData.source,
           income_type: formData.source,
@@ -151,7 +156,6 @@ function Dashboard() {
         }
       }
 
-      // Reset
       setFormData({
         title: '',
         amount: '',
@@ -164,8 +168,12 @@ function Dashboard() {
       loadDashboardData();
     } catch (err) {
       console.error('Save failed:', err);
-      const errorMsg = err.response?.data ? JSON.stringify(err.response.data) : 'Failed to save.';
-      alert(`Backend Validation Error: ${errorMsg}`);
+      if (err.response?.status === 401) {
+        handleAuthError();
+        return;
+      }
+      const errorMsg = err.response?.data ? JSON.stringify(err.response.data) : 'Save nahi ho saka.';
+      alert(`Backend Error: ${errorMsg}`);
     }
   };
 
@@ -197,7 +205,7 @@ function Dashboard() {
 
   // 4. Delete Handler
   const handleDelete = async (id, type) => {
-    if (!window.confirm(`Delete this ${type.toLowerCase()} record?`)) return;
+    if (!window.confirm(`Kya aap is ${type.toLowerCase()} ko delete karna chahte hain?`)) return;
     try {
       if (type === 'EXPENSE') {
         await api.delete(`expenses/${id}/`);
@@ -207,7 +215,11 @@ function Dashboard() {
       loadDashboardData();
     } catch (err) {
       console.error('Delete failed:', err);
-      alert('Delete operation failed.');
+      if (err.response?.status === 401) {
+        handleAuthError();
+        return;
+      }
+      alert('Delete operation fail ho gaya.');
     }
   };
 
@@ -216,7 +228,7 @@ function Dashboard() {
     e.preventDefault();
     const totalAmount = parseFloat(budgetForm.total_amount);
     if (!totalAmount || totalAmount <= 0) {
-      alert('Please enter a valid monthly total budget.');
+      alert('Valid total monthly budget daalein.');
       return;
     }
 
@@ -236,10 +248,17 @@ function Dashboard() {
       });
       setShowBudgetModal(false);
       loadDashboardData();
-      alert('Monthly budget saved to backend!');
+      alert('Monthly category budget backend par successfully save ho gaya!');
     } catch (err) {
       console.error('Budget save failed:', err);
-      alert('Error saving budget to backend.');
+      if (err.response?.status === 401) {
+        handleAuthError();
+        return;
+      }
+      const errorMsg = err.response?.data
+        ? JSON.stringify(err.response.data)
+        : err.message || 'Error saving budget to backend.';
+      alert(`Backend Error: ${errorMsg}`);
     }
   };
 
@@ -264,7 +283,6 @@ function Dashboard() {
     return acc;
   }, {});
 
-  // Chronological Activity
   const combinedActivity = [
     ...expenses.map((e) => ({ ...e, type: 'EXPENSE', displayTitle: e.title, displayCat: e.category })),
     ...incomes.map((i) => {
@@ -273,7 +291,6 @@ function Dashboard() {
     }),
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Chart Data
   const activeDataset = chartView === 'EXPENSE' ? expenseByCategory : incomeBySource;
   const activeTotal = chartView === 'EXPENSE' ? totalExpense : totalIncome;
 
@@ -379,7 +396,7 @@ function Dashboard() {
 
         </div>
 
-        {/* BUDGET UTILIZATION BARS */}
+        {/* BUDGET UTILIZATION */}
         <div style={{ backgroundColor: '#ffffff', padding: '20px 24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', fontWeight: '600' }}>
             <span>Monthly Budget Used: {budgetSpentPercent}%</span>
@@ -474,7 +491,7 @@ function Dashboard() {
 
           {activeTotal === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: '14px' }}>
-              No {chartView.toLowerCase()} records found. Record one below to view the breakdown!
+              No {chartView.toLowerCase()} records found.
             </div>
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-around', gap: '30px' }}>
@@ -522,7 +539,7 @@ function Dashboard() {
           )}
         </div>
 
-        {/* INPUT FORM & CHRONOLOGICAL ACTIVITY */}
+        {/* INPUT FORM & ACTIVITY */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
           
           {/* CREATE/EDIT FORM */}
@@ -768,7 +785,7 @@ function Dashboard() {
 
         </div>
 
-        {/* MODAL */}
+        {/* MODAL: CATEGORY-WISE BUDGET */}
         {showBudgetModal && (
           <div style={{
             position: 'fixed',
