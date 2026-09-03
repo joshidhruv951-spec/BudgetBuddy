@@ -1,55 +1,107 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Expense, Income, Budget
+from django.contrib.auth.models import User
+from .models import Expense, Income, Budget, CategoryBudget
 from .serializers import ExpenseSerializer, IncomeSerializer, BudgetSerializer
 
-# 1. Expense Management ViewSet
+# 1. User Registration View
+class RegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+        email = request.data.get('email', '')
+
+        if not username or not password:
+            return Response({'error': 'Username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username=username).exists():
+            return Response({'error': 'Username already exists'}, status=status.HTTP_400_BAD_REQUEST)
+
+        User.objects.create_user(username=username, password=password, email=email)
+        return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
+
+
+# 2. Expense ViewSet (Strict 6 Categories)
 class ExpenseViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Only logged-in user's expenses
         return Expense.objects.filter(user=self.request.user).order_by('-date', '-created_at')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
 
-# 2. Income Management ViewSet (Tasks 1, 2, 3, 4)
+# 3. Income ViewSet (Strict 3 Sources)
 class IncomeViewSet(viewsets.ModelViewSet):
     serializer_class = IncomeSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Only logged-in user's incomes
         return Income.objects.filter(user=self.request.user).order_by('-date', '-created_at')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
 
-# 3. Budget Management ViewSet
+# 4. Budget ViewSet (Bulletproof Category Allocations)
 class BudgetViewSet(viewsets.ModelViewSet):
     serializer_class = BudgetSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Only logged-in user's budgets
         return Budget.objects.filter(user=self.request.user).order_by('-year', '-month')
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    def create(self, request, *args, **kwargs):
+        """Direct save/update logic - zero serializer validation clash"""
+        try:
+            month = request.data.get('month')
+            year = request.data.get('year')
+            total_amount = request.data.get('total_amount')
+            allocations = request.data.get('category_allocations', [])
+
+            if not month or not year or not total_amount:
+                return Response(
+                    {'error': 'Month, year and total_amount are required.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Monthly budget banayein ya update karein
+            budget, _ = Budget.objects.update_or_create(
+                user=request.user,
+                month=int(month),
+                year=int(year),
+                defaults={'total_amount': float(total_amount)}
+            )
+
+            # Purane category allocations saaf karke naye add karein
+            budget.category_allocations.all().delete()
+            for alloc in allocations:
+                cat = alloc.get('category')
+                amt = alloc.get('allocated_amount')
+                if cat and amt and float(amt) > 0:
+                    CategoryBudget.objects.create(
+                        budget=budget,
+                        category=cat,
+                        allocated_amount=float(amt)
+                    )
+
+            serializer = self.get_serializer(budget)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# 4. Milestone 2 Task 5: Dashboard Data & Chronological View
+# 5. Milestone 2 Task 5: Dashboard Summary & Chronological View
 class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        
         expenses = Expense.objects.filter(user=user)
         incomes = Income.objects.filter(user=user)
 
@@ -57,9 +109,7 @@ class DashboardSummaryView(APIView):
         total_expense = sum(float(e.amount) for e in expenses)
         remaining_amount = total_income - total_expense
 
-        # Combine Expense & Income chronologically
         combined_activity = []
-
         for e in expenses:
             combined_activity.append({
                 'id': f"exp_{e.id}",
@@ -73,18 +123,18 @@ class DashboardSummaryView(APIView):
             })
 
         for i in incomes:
+            src = i.source or getattr(i, 'income_type', 'Pocket Money')
             combined_activity.append({
                 'id': f"inc_{i.id}",
                 'original_id': i.id,
-                'title': i.source,
+                'title': src,
                 'amount': float(i.amount),
-                'category': i.source,
+                'category': src,
                 'type': 'INCOME',
                 'date': str(i.date),
                 'created_at': i.created_at.isoformat()
             })
 
-        # Sort chronologically by date and creation time descending
         combined_activity.sort(key=lambda x: (x['date'], x['created_at']), reverse=True)
 
         return Response({
