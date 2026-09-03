@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from .models import Expense, Income, Budget, CategoryBudget, EXPENSE_CATEGORIES, INCOME_SOURCES
 
-# --- Expense Serializer ---
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Expense
@@ -22,20 +21,28 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return value
 
 
-# --- Income Serializer ---
 class IncomeSerializer(serializers.ModelSerializer):
+    source = serializers.CharField(required=False)
+    income_type = serializers.CharField(required=False)
+
     class Meta:
         model = Income
-        fields = ['id', 'source', 'amount', 'date', 'details', 'created_at']
+        fields = ['id', 'source', 'income_type', 'amount', 'date', 'details', 'created_at']
         read_only_fields = ['id', 'created_at']
 
-    def validate_source(self, value):
+    def validate(self, data):
+        source_val = data.get('income_type') or data.get('source')
+        if not source_val:
+            raise serializers.ValidationError({"income_type": ["This field is required."]})
+        
         valid_sources = [s[0] for s in INCOME_SOURCES]
-        if value not in valid_sources:
+        if source_val not in valid_sources:
             raise serializers.ValidationError(
-                f"Invalid income source '{value}'. Must be one of: {', '.join(valid_sources)}"
+                {"income_type": [f"Must be one of: {', '.join(valid_sources)}"]}
             )
-        return value
+        
+        data['source'] = source_val
+        return data
 
     def validate_amount(self, value):
         if value <= 0:
@@ -43,7 +50,6 @@ class IncomeSerializer(serializers.ModelSerializer):
         return value
 
 
-# --- Category Budget Serializer ---
 class CategoryBudgetSerializer(serializers.ModelSerializer):
     class Meta:
         model = CategoryBudget
@@ -61,7 +67,6 @@ class CategoryBudgetSerializer(serializers.ModelSerializer):
         return value
 
 
-# --- Main Budget Serializer ---
 class BudgetSerializer(serializers.ModelSerializer):
     category_allocations = CategoryBudgetSerializer(many=True, required=False)
 
@@ -84,7 +89,6 @@ class BudgetSerializer(serializers.ModelSerializer):
         allocations_data = validated_data.pop('category_allocations', [])
         user = self.context['request'].user
         
-        # Monthly budget create ya update karein
         budget, _ = Budget.objects.update_or_create(
             user=user,
             month=validated_data['month'],
@@ -92,7 +96,6 @@ class BudgetSerializer(serializers.ModelSerializer):
             defaults={'total_amount': validated_data['total_amount']}
         )
         
-        # Fresh allocations set karein
         budget.category_allocations.all().delete()
         for alloc in allocations_data:
             CategoryBudget.objects.create(budget=budget, **alloc)

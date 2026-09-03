@@ -40,7 +40,7 @@ function Dashboard() {
   const [chartView, setChartView] = useState('EXPENSE');
 
   // Form State
-  const [formType, setFormType] = useState('EXPENSE'); // 'EXPENSE' or 'INCOME'
+  const [formType, setFormType] = useState('EXPENSE');
   const [formData, setFormData] = useState({
     title: '',
     amount: '',
@@ -51,7 +51,7 @@ function Dashboard() {
   });
   const [editingItem, setEditingItem] = useState(null);
 
-  // Category Budget Allocation Modal/Panel
+  // Category Budget Allocation Modal
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [budgetForm, setBudgetForm] = useState({
     total_amount: '',
@@ -62,7 +62,7 @@ function Dashboard() {
   const currentMonth = currentDate.getMonth() + 1;
   const currentYear = currentDate.getFullYear();
 
-  // 1. Fetch All Data from Backend
+  // 1. Fetch All Data
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -72,13 +72,12 @@ function Dashboard() {
         api.get('budgets/'),
       ]);
 
-      setExpenses(expRes.data);
-      setIncomes(incRes.data);
+      setExpenses(expRes.data || []);
+      setIncomes(incRes.data || []);
 
-      // Find budget for current month & year
-      const activeBudget = budRes.data.find(
+      const activeBudget = (budRes.data || []).find(
         (b) => Number(b.month) === currentMonth && Number(b.year) === currentYear
-      ) || budRes.data[0] || null;
+      ) || (budRes.data && budRes.data[0]) || null;
 
       setCurrentBudget(activeBudget);
 
@@ -113,11 +112,11 @@ function Dashboard() {
     navigate('/login');
   };
 
-  // 2. Submit Expense or Income
+  // 2. Submit Transaction (Handles both source & income_type)
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.amount || Number(formData.amount) <= 0) {
-      alert('Please enter a valid amount greater than 0');
+      alert('Please enter an amount greater than 0');
       return;
     }
 
@@ -136,8 +135,10 @@ function Dashboard() {
           await api.post('expenses/', payload);
         }
       } else {
+        // Sends both source AND income_type to pass backend validation cleanly
         const payload = {
           source: formData.source,
+          income_type: formData.source,
           amount: parseFloat(formData.amount),
           date: formData.date,
           details: formData.details || '',
@@ -150,7 +151,7 @@ function Dashboard() {
         }
       }
 
-      // Reset form
+      // Reset
       setFormData({
         title: '',
         amount: '',
@@ -162,7 +163,7 @@ function Dashboard() {
       setEditingItem(null);
       loadDashboardData();
     } catch (err) {
-      console.error('Error saving transaction:', err);
+      console.error('Save failed:', err);
       const errorMsg = err.response?.data ? JSON.stringify(err.response.data) : 'Failed to save.';
       alert(`Backend Validation Error: ${errorMsg}`);
     }
@@ -182,11 +183,12 @@ function Dashboard() {
         details: '',
       });
     } else {
+      const incVal = item.source || item.income_type || 'Pocket Money';
       setFormData({
         title: '',
         amount: item.amount,
         category: 'Food',
-        source: item.source,
+        source: incVal,
         date: item.date,
         details: item.details || '',
       });
@@ -195,7 +197,7 @@ function Dashboard() {
 
   // 4. Delete Handler
   const handleDelete = async (id, type) => {
-    if (!window.confirm(`Are you sure you want to delete this ${type.toLowerCase()}?`)) return;
+    if (!window.confirm(`Delete this ${type.toLowerCase()} record?`)) return;
     try {
       if (type === 'EXPENSE') {
         await api.delete(`expenses/${id}/`);
@@ -204,12 +206,12 @@ function Dashboard() {
       }
       loadDashboardData();
     } catch (err) {
-      console.error('Failed to delete:', err);
+      console.error('Delete failed:', err);
       alert('Delete operation failed.');
     }
   };
 
-  // 5. Save Category-wise Monthly Budget (Backend API)
+  // 5. Save Category-wise Budget
   const handleSaveBudget = async (e) => {
     e.preventDefault();
     const totalAmount = parseFloat(budgetForm.total_amount);
@@ -234,14 +236,14 @@ function Dashboard() {
       });
       setShowBudgetModal(false);
       loadDashboardData();
-      alert('Monthly category-wise budget successfully saved to backend!');
+      alert('Monthly budget saved to backend!');
     } catch (err) {
-      console.error('Failed to save budget:', err);
+      console.error('Budget save failed:', err);
       alert('Error saving budget to backend.');
     }
   };
 
-  // --- Financial Calculations ---
+  // Calculations
   const totalIncome = incomes.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
   const totalExpense = expenses.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
   const remainingBalance = totalIncome - totalExpense;
@@ -251,25 +253,27 @@ function Dashboard() {
     ? Math.min(Math.round((totalExpense / monthlyBudgetLimit) * 100), 100)
     : 0;
 
-  // Expenses grouped by Category
   const expenseByCategory = expenses.reduce((acc, item) => {
     acc[item.category] = (acc[item.category] || 0) + parseFloat(item.amount || 0);
     return acc;
   }, {});
 
-  // Incomes grouped by Source
   const incomeBySource = incomes.reduce((acc, item) => {
-    acc[item.source] = (acc[item.source] || 0) + parseFloat(item.amount || 0);
+    const key = item.source || item.income_type || 'Pocket Money';
+    acc[key] = (acc[key] || 0) + parseFloat(item.amount || 0);
     return acc;
   }, {});
 
-  // Combined Chronological Activity
+  // Chronological Activity
   const combinedActivity = [
     ...expenses.map((e) => ({ ...e, type: 'EXPENSE', displayTitle: e.title, displayCat: e.category })),
-    ...incomes.map((i) => ({ ...i, type: 'INCOME', displayTitle: i.source, displayCat: i.source })),
+    ...incomes.map((i) => {
+      const src = i.source || i.income_type || 'Pocket Money';
+      return { ...i, type: 'INCOME', displayTitle: src, displayCat: src };
+    }),
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Chart Data Preparation
+  // Chart Data
   const activeDataset = chartView === 'EXPENSE' ? expenseByCategory : incomeBySource;
   const activeTotal = chartView === 'EXPENSE' ? totalExpense : totalIncome;
 
@@ -330,7 +334,7 @@ function Dashboard() {
           </button>
         </header>
 
-        {/* TASK 5 METRICS CARDS (Total Income, Total Expenses, Remaining Amount) */}
+        {/* METRICS CARDS */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           
           <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '5px solid #2563eb' }}>
@@ -375,10 +379,10 @@ function Dashboard() {
 
         </div>
 
-        {/* MONTHLY & CATEGORY-WISE BUDGET UTILIZATION */}
+        {/* BUDGET UTILIZATION BARS */}
         <div style={{ backgroundColor: '#ffffff', padding: '20px 24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', fontWeight: '600' }}>
-            <span>Overall Monthly Budget Used: {budgetSpentPercent}%</span>
+            <span>Monthly Budget Used: {budgetSpentPercent}%</span>
             <span>₹{totalExpense.toLocaleString()} / ₹{monthlyBudgetLimit.toLocaleString()}</span>
           </div>
           <div style={{ width: '100%', height: '10px', backgroundColor: '#e2e8f0', borderRadius: '5px', overflow: 'hidden', marginBottom: '18px' }}>
@@ -390,7 +394,6 @@ function Dashboard() {
             }} />
           </div>
 
-          {/* Category Allocation Progress Bars */}
           {currentBudget?.category_allocations?.length > 0 && (
             <div>
               <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -426,7 +429,7 @@ function Dashboard() {
           )}
         </div>
 
-        {/* PIE / DONUT BREAKDOWN SECTION */}
+        {/* PIE / DONUT BREAKDOWN */}
         <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '18px' }}>
             <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
@@ -471,11 +474,10 @@ function Dashboard() {
 
           {activeTotal === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: '14px' }}>
-              No {chartView.toLowerCase()} records found. Record one below to view the visual breakdown!
+              No {chartView.toLowerCase()} records found. Record one below to view the breakdown!
             </div>
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-around', gap: '30px' }}>
-              {/* Donut Chart */}
               <div style={{ position: 'relative', width: '180px', height: '180px' }}>
                 <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
                   <circle cx="18" cy="18" r="15.9155" fill="transparent" stroke="#f1f5f9" strokeWidth="3.8" />
@@ -503,7 +505,6 @@ function Dashboard() {
                 </div>
               </div>
 
-              {/* Legend */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '240px' }}>
                 {slices.map((slice) => (
                   <div key={slice.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
@@ -524,13 +525,12 @@ function Dashboard() {
         {/* INPUT FORM & CHRONOLOGICAL ACTIVITY */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
           
-          {/* CREATE / EDIT TRANSACTION FORM */}
+          {/* CREATE/EDIT FORM */}
           <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>
               {editingItem ? `✏️ Edit ${formType}` : `➕ Record ${formType}`}
             </h3>
 
-            {/* Type Selector (Expense vs Income) */}
             {!editingItem && (
               <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                 <button
@@ -569,8 +569,6 @@ function Dashboard() {
             )}
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              
-              {/* Conditional Title / Source */}
               {formType === 'EXPENSE' ? (
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Title / Description</label>
@@ -598,7 +596,6 @@ function Dashboard() {
                 </div>
               )}
 
-              {/* Amount & Category */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Amount (₹)</label>
@@ -692,7 +689,7 @@ function Dashboard() {
             </form>
           </div>
 
-          {/* TASK 5: RECENT FINANCIAL ACTIVITY (Combined Chronological View) */}
+          {/* RECENT ACTIVITY */}
           <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>
               📜 Recent Financial Activity
@@ -771,7 +768,7 @@ function Dashboard() {
 
         </div>
 
-        {/* MODAL: CATEGORY-WISE BUDGET ALLOCATION (BACKEND BUDGET SYSTEM) */}
+        {/* MODAL */}
         {showBudgetModal && (
           <div style={{
             position: 'fixed',
@@ -826,7 +823,7 @@ function Dashboard() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#334155', marginBottom: '8px' }}>
-                    Category-wise Allocations (Mentor Defined 6 Categories):
+                    Category-wise Allocations:
                   </label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {EXPENSE_CATEGORIES.map((cat) => (
