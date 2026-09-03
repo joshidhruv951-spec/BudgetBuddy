@@ -129,7 +129,7 @@ function Dashboard() {
     }
   };
 
-  // Calculations
+  // Financial Calculations
   const totalIncome = transactions
     .filter((t) => (t.type || t.transaction_type || '').toUpperCase() === 'INCOME')
     .reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
@@ -141,11 +141,49 @@ function Dashboard() {
   const totalBalance = totalIncome - totalExpense;
   const budgetSpentPercent = Math.min(Math.round((totalExpense / budgetLimit) * 100), 100);
 
+  // Category Colors Palette for Pie Chart
+  const categoryColors = {
+    Food: '#f97316',          // Orange
+    Rent: '#8b5cf6',          // Purple
+    Entertainment: '#ec4899', // Pink
+    Shopping: '#3b82f6',      // Blue
+    Utilities: '#eab308',     // Yellow
+    Other: '#64748b',         // Slate Gray
+  };
+
+  // Calculate Category Breakdowns for Pie Chart
+  const expenseByCategory = transactions
+    .filter((t) => (t.type || t.transaction_type || '').toUpperCase() === 'EXPENSE')
+    .reduce((acc, t) => {
+      const cat = t.category || 'Other';
+      acc[cat] = (acc[cat] || 0) + parseFloat(t.amount || 0);
+      return acc;
+    }, {});
+
+  const chartData = Object.keys(expenseByCategory).map((cat) => {
+    const amount = expenseByCategory[cat];
+    const percent = totalExpense > 0 ? (amount / totalExpense) * 100 : 0;
+    return {
+      category: cat,
+      amount,
+      percent,
+      color: categoryColors[cat] || '#94a3b8',
+    };
+  });
+
+  // Calculate SVG offsets for concentric slices
+  let cumulative = 0;
+  const slicesWithOffsets = chartData.map((slice) => {
+    const offset = cumulative;
+    cumulative += slice.percent;
+    return { ...slice, offset };
+  });
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f1f5f9', padding: '24px', fontFamily: 'sans-serif' }}>
       <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
         
-        {/* HEADER WITH LOGOUT */}
+        {/* TOP HEADER */}
         <header style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -174,15 +212,14 @@ function Dashboard() {
               cursor: 'pointer',
               fontWeight: '600',
               fontSize: '14px',
-              boxShadow: '0 2px 4px rgba(239,68,68,0.3)',
-              transition: 'background 0.2s'
+              boxShadow: '0 2px 4px rgba(239,68,68,0.3)'
             }}
           >
             Logout
           </button>
         </header>
 
-        {/* SUMMARY METRIC CARDS */}
+        {/* METRICS CARDS */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           
           <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '5px solid #2563eb' }}>
@@ -223,7 +260,7 @@ function Dashboard() {
                   type="number"
                   value={newBudget}
                   onChange={(e) => setNewBudget(e.target.value)}
-                  style={{ width: '100px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a' }}
+                  style={{ width: '100px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
                 />
                 <button
                   onClick={handleSaveBudget}
@@ -243,7 +280,7 @@ function Dashboard() {
         {/* BUDGET PROGRESS BAR */}
         <div style={{ backgroundColor: '#ffffff', padding: '18px 24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#334155' }}>
-            <span>Monthly Budget Usage: {budgetSpentPercent}% used</span>
+            <span>Budget Utilisation: {budgetSpentPercent}% used</span>
             <span>₹{totalExpense.toLocaleString()} / ₹{budgetLimit.toLocaleString()}</span>
           </div>
           <div style={{ width: '100%', height: '10px', backgroundColor: '#e2e8f0', borderRadius: '5px', overflow: 'hidden' }}>
@@ -257,7 +294,81 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* MAIN 2-COLUMN SECTION: FORM & TRANSACTIONS */}
+        {/* EXPENSE DONUT / PIE CHART SECTION */}
+        <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '24px' }}>
+          <h3 style={{ margin: '0 0 18px 0', fontSize: '18px', color: '#0f172a' }}>
+            📊 Expense Breakdown by Category
+          </h3>
+
+          {totalExpense === 0 ? (
+            <div style={{ textAlign: 'center', padding: '30px 0', color: '#94a3b8' }}>
+              No expenses added yet. Add an expense below to see your breakdown chart!
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-around', gap: '30px' }}>
+              
+              {/* SVG Donut Chart */}
+              <div style={{ position: 'relative', width: '180px', height: '180px' }}>
+                <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15.9155"
+                    fill="transparent"
+                    stroke="#f1f5f9"
+                    strokeWidth="3.8"
+                  />
+                  {slicesWithOffsets.map((slice) => (
+                    <circle
+                      key={slice.category}
+                      cx="18"
+                      cy="18"
+                      r="15.9155"
+                      fill="transparent"
+                      stroke={slice.color}
+                      strokeWidth="3.8"
+                      strokeDasharray={`${slice.percent} ${100 - slice.percent}`}
+                      strokeDashoffset={-slice.offset}
+                      style={{ transition: 'stroke-dasharray 0.5s ease' }}
+                    />
+                  ))}
+                </svg>
+
+                {/* Center Badge */}
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  textAlign: 'center'
+                }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Spent</span>
+                  <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#0f172a' }}>
+                    ₹{totalExpense.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Chart Legend with Percentages */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '220px' }}>
+                {slicesWithOffsets.map((slice) => (
+                  <div key={slice.category} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: slice.color, display: 'inline-block' }} />
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#334155' }}>{slice.category}</span>
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#64748b' }}>
+                      <strong>₹{slice.amount.toLocaleString()}</strong> ({Math.round(slice.percent)}%)
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+          )}
+        </div>
+
+        {/* MAIN SECTION: FORM & RECENT TRANSACTIONS */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
           
           {/* TRANSACTION FORM */}
@@ -276,7 +387,7 @@ function Dashboard() {
                   placeholder="e.g., Grocery Shopping"
                   value={formData.title}
                   onChange={handleChange}
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -289,7 +400,7 @@ function Dashboard() {
                   placeholder="e.g., 500"
                   value={formData.amount}
                   onChange={handleChange}
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -300,7 +411,7 @@ function Dashboard() {
                     name="type"
                     value={formData.type}
                     onChange={handleChange}
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
                   >
                     <option value="EXPENSE">Expense</option>
                     <option value="INCOME">Income</option>
@@ -313,7 +424,7 @@ function Dashboard() {
                     name="category"
                     value={formData.category}
                     onChange={handleChange}
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
                   >
                     <option value="Food">Food</option>
                     <option value="Rent">Rent</option>
@@ -333,7 +444,7 @@ function Dashboard() {
                   name="date"
                   value={formData.date}
                   onChange={handleChange}
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#0f172a', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -377,7 +488,7 @@ function Dashboard() {
             </form>
           </div>
 
-          {/* RECENT TRANSACTIONS LIST */}
+          {/* RECENT TRANSACTIONS */}
           <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>📜 Recent Transactions</h3>
 
@@ -448,6 +559,7 @@ function Dashboard() {
               </div>
             )}
           </div>
+
         </div>
 
       </div>
