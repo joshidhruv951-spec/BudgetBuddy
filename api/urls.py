@@ -1,16 +1,26 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import views
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .views import (
+    ExpenseViewSet, 
+    IncomeViewSet, 
+    BudgetViewSet, 
+    DashboardSummaryView,
+    RegisterView
+)
 
 router = DefaultRouter()
-router.register(r'profiles', views.ProfileViewSet)
-router.register(r'incomes', views.IncomeViewSet)
-router.register(r'expenses', views.ExpenseViewSet)
-router.register(r'budgets', views.BudgetViewSet)
-router.register(r'savings-goals', views.SavingsGoalViewSet)
-router.register(r'notifications', views.NotificationViewSet)
-router.register(r'reports', views.ReportViewSet)
+router.register(r'expenses', ExpenseViewSet, basename='expense')
+router.register(r'incomes', IncomeViewSet, basename='income')
+router.register(r'budgets', BudgetViewSet, basename='budget')
 
 urlpatterns = [
+    # Auth Endpoints
+    path('register/', RegisterView.as_view(), name='register'),
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Mentor APIs
     path('', include(router.urls)),
+    path('dashboard-data/', DashboardSummaryView.as_view(), name='dashboard-data'),
 ]
