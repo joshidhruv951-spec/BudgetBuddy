@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/axios';
 
 function Login() {
@@ -21,17 +21,18 @@ function Login() {
       });
 
       localStorage.setItem('token', response.data.access);
-      localStorage.setItem('refresh', response.data.refresh);
+      if (response.data.refresh) {
+        localStorage.setItem('refreshToken', response.data.refresh);
+      }
       localStorage.setItem('username', username.trim());
+
       navigate('/');
     } catch (err) {
-      console.error('Login Error:', err);
-      if (!err.response) {
-        setError('Server connect nahi ho raha! Render free server wake hone mein 40 sec lagte hain, thoda wait karein.');
-      } else if (err.response.status === 401) {
-        setError('Galat Username ya Password hai. Agar naya account nahi banaya toh Register karein.');
+      console.error('Login failed:', err);
+      if (err.response?.data?.detail) {
+        setError(err.response.data.detail);
       } else {
-        setError(err.response.data?.detail || 'Server error aayi hai. Kripya dobara try karein.');
+        setError('Login failed. Check username and password.');
       }
     } finally {
       setLoading(false);
@@ -39,59 +40,114 @@ function Login() {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'sans-serif' }}>
-      <div style={{ background: '#fff', padding: '32px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', width: '100%', maxWidth: '380px' }}>
-        <h2 style={{ textAlign: 'center', margin: '0 0 20px 0', color: '#0f172a' }}>BudgetBuddy Login</h2>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#f1f5f9',
+      fontFamily: 'system-ui, sans-serif',
+      padding: '20px'
+    }}>
+      <div style={{
+        backgroundColor: '#ffffff',
+        padding: '36px',
+        borderRadius: '12px',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+        width: '100%',
+        maxWidth: '400px'
+      }}>
+        <h2 style={{ margin: '0 0 8px 0', color: '#0f172a', textAlign: 'center', fontSize: '24px' }}>
+          BudgetBuddy Login
+        </h2>
+        <p style={{ margin: '0 0 24px 0', color: '#64748b', textAlign: 'center', fontSize: '14px' }}>
+          Enter your credentials to continue
+        </p>
 
         {error && (
-          <div style={{ color: '#b91c1c', background: '#fee2e2', padding: '10px 12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', lineHeight: '1.4' }}>
+          <div style={{
+            backgroundColor: '#fee2e2',
+            color: '#b91c1c',
+            padding: '10px',
+            borderRadius: '6px',
+            marginBottom: '16px',
+            fontSize: '13px',
+            textAlign: 'center'
+          }}>
             {error}
           </div>
         )}
 
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>Username</label>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
+              Username
+            </label>
             <input
               type="text"
               required
+              autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Username"
-              style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
+              placeholder="Enter username"
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                fontSize: '14px',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
             />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>Password</label>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
+              Password
+            </label>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
+              placeholder="Enter password"
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                fontSize: '14px',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            style={{ marginTop: '8px', width: '100%', padding: '12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: '600', fontSize: '15px', cursor: loading ? 'not-allowed' : 'pointer' }}
+            style={{
+              backgroundColor: '#2563eb',
+              color: '#ffffff',
+              padding: '12px',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '15px',
+              marginTop: '8px'
+            }}
           >
-            {loading ? 'Connecting to Server...' : 'Login'}
+            {loading ? 'Logging in...' : 'Sign In'}
           </button>
         </form>
 
         <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '14px', color: '#64748b' }}>
           Don't have an account?{' '}
-          <button
-            type="button"
-            onClick={() => navigate('/register')}
-            style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', padding: 0, fontSize: '14px', textDecoration: 'underline' }}
-          >
+          <Link to="/register" style={{ color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>
             Register here
-          </button>
+          </Link>
         </div>
       </div>
     </div>

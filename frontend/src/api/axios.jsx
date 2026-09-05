@@ -1,32 +1,21 @@
 import axios from 'axios';
 
-// Render backend URL
 const api = axios.create({
-  baseURL: 'https://budgetbuddy-backend-0u31.onrender.com/api/', // Aapka Render backend endpoint
+  baseURL: 'http://127.0.0.1:8000/api/',
 });
 
-// Request Interceptor: Har request ke sath access token attach karein
+// Interceptor: Public routes (login/register) par purana token nahi bhejega
 api.interceptors.request.use(
   (config) => {
+    const isPublic = config.url.includes('token/') || config.url.includes('register/');
     const token = localStorage.getItem('token');
-    if (token) {
+
+    if (token && !isPublic) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => Promise.reject(error)
-);
-
-// Response Interceptor: Agar token expire ho toh seedha auto-logout karein
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      localStorage.clear();
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
 );
 
 export default api;

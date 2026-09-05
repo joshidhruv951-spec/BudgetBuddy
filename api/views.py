@@ -5,9 +5,10 @@ from django.contrib.auth.models import User
 from .models import Expense, Income, Budget, CategoryBudget
 from .serializers import ExpenseSerializer, IncomeSerializer, BudgetSerializer
 
-# 1. User Registration View
+# 1. User Registration View (Zero Token Authentication Required)
 class RegisterView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []  # Expired token ki wajah se register block nahi hoga
 
     def post(self, request):
         username = request.data.get('username')
@@ -17,7 +18,7 @@ class RegisterView(APIView):
         if not username or not password:
             return Response({'error': 'Username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
         if User.objects.filter(username=username).exists():
-            return Response({'error': 'Username already exists'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Username already exists. Please choose a different one.'}, status=status.HTTP_400_BAD_REQUEST)
 
         User.objects.create_user(username=username, password=password, email=email)
         return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
@@ -47,7 +48,7 @@ class IncomeViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
 
-# 4. Budget ViewSet (Bulletproof Category Allocations)
+# 4. Budget ViewSet
 class BudgetViewSet(viewsets.ModelViewSet):
     serializer_class = BudgetSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -56,7 +57,6 @@ class BudgetViewSet(viewsets.ModelViewSet):
         return Budget.objects.filter(user=self.request.user).order_by('-year', '-month')
 
     def create(self, request, *args, **kwargs):
-        """Direct save/update logic - zero serializer validation clash"""
         try:
             month = request.data.get('month')
             year = request.data.get('year')
@@ -69,7 +69,6 @@ class BudgetViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Monthly budget banayein ya update karein
             budget, _ = Budget.objects.update_or_create(
                 user=request.user,
                 month=int(month),
@@ -77,7 +76,6 @@ class BudgetViewSet(viewsets.ModelViewSet):
                 defaults={'total_amount': float(total_amount)}
             )
 
-            # Purane category allocations saaf karke naye add karein
             budget.category_allocations.all().delete()
             for alloc in allocations:
                 cat = alloc.get('category')
@@ -96,7 +94,7 @@ class BudgetViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# 5. Milestone 2 Task 5: Dashboard Summary & Chronological View
+# 5. Dashboard Summary View
 class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -132,10 +130,10 @@ class DashboardSummaryView(APIView):
                 'category': src,
                 'type': 'INCOME',
                 'date': str(i.date),
-                'created_at': i.created_at.isoformat()
+                'created_at': e.created_at.isoformat() if hasattr(e, 'created_at') else ''
             })
 
-        combined_activity.sort(key=lambda x: (x['date'], x['created_at']), reverse=True)
+        combined_activity.sort(key=lambda x: x['date'], reverse=True)
 
         return Response({
             'total_income': total_income,

@@ -31,6 +31,7 @@ class IncomeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
     def validate(self, data):
+        # Frontend se chahe source aaye ya income_type, sahi value pick karein
         source_val = data.get('income_type') or data.get('source')
         if not source_val:
             raise serializers.ValidationError({"income_type": ["This field is required."]})
@@ -42,12 +43,51 @@ class IncomeSerializer(serializers.ModelSerializer):
             )
         
         data['source'] = source_val
+        data['income_type'] = source_val
         return data
 
     def validate_amount(self, value):
         if value <= 0:
             raise serializers.ValidationError("Income amount must be greater than 0.")
         return value
+
+    def create(self, validated_data):
+        # Model mein jo actual column hai (income_type ya source) sirf wahi pass karein
+        model_fields = [f.name for f in Income._meta.get_fields()]
+        val = validated_data.pop('income_type', None) or validated_data.pop('source', None)
+
+        if 'income_type' in model_fields:
+            validated_data['income_type'] = val
+        elif 'source' in model_fields:
+            validated_data['source'] = val
+
+        # Database mein sirf wahi fields bhejenge jo model mein sach mein exist karte hain
+        clean_data = {k: v for k, v in validated_data.items() if k in model_fields}
+        return Income.objects.create(**clean_data)
+
+    def update(self, instance, validated_data):
+        model_fields = [f.name for f in Income._meta.get_fields()]
+        val = validated_data.pop('income_type', None) or validated_data.pop('source', None)
+
+        if val:
+            if 'income_type' in model_fields:
+                validated_data['income_type'] = val
+            elif 'source' in model_fields:
+                validated_data['source'] = val
+
+        clean_data = {k: v for k, v in validated_data.items() if k in model_fields}
+        for attr, value in clean_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+    def to_representation(self, instance):
+        # Frontend ko display ke liye dono fields milenge
+        data = super().to_representation(instance)
+        val = getattr(instance, 'income_type', None) or getattr(instance, 'source', None)
+        data['source'] = val
+        data['income_type'] = val
+        return data
 
 
 class CategoryBudgetSerializer(serializers.ModelSerializer):

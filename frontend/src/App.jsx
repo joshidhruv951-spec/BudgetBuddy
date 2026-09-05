@@ -1,10 +1,10 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
-import Register from './pages/Register';
+import Register from './pages/register';
+import Dashboard from './pages/Dashboard';
 
-// Protected Route: Yeh har baar dynamically check karega ki token hai ya nahi
+// Protected Route: Bina token ke seedha Login par bhejega
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
   if (!token) {
@@ -17,9 +17,10 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* Public Routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        
+
         {/* Protected Dashboard Route */}
         <Route
           path="/"
@@ -30,8 +31,8 @@ function App() {
           }
         />
 
-        {/* Baki sabhi URL par Dashboard ya Login par redirect */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Catch-all: Koi bhi anjaan URL aaye toh seedha /login par redirect kare */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );

@@ -20,7 +20,7 @@ urlpatterns = [
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
-    # Mentor APIs
-    path('', include(router.urls)),
+    # Data Endpoints
     path('dashboard-data/', DashboardSummaryView.as_view(), name='dashboard-data'),
+    path('', include(router.urls)),
 ]
